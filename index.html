@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firmware Download Center</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Fira Code', monospace; }
+    html, body, #app { height: 100%; }
+    body { background: linear-gradient(135deg, #0f172a 0%, #1a1f3a 100%); color: #e2e8f0; overflow: hidden; }
+    
+    .table-wrapper { height: calc(100% - 280px); overflow-y: auto; }
+    .firmware-row { transition: all 0.2s ease; border-bottom: 1px solid rgba(226, 232, 240, 0.05); cursor: pointer; }
+    .firmware-row:hover { background: rgba(148, 163, 184, 0.08); transform: translateX(2px); }
+    .firmware-row.highlighted { background: rgba(168, 85, 247, 0.15); }
+    
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .status-available { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .status-downloading { background: rgba(59, 130, 246, 0.2); color: #3b82f6; animation: pulse 2s infinite; }
+    .status-error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .status-pending { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+    
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    
+    .filter-chip { padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(226, 232, 240, 0.2); background: rgba(71, 85, 105, 0.4); color: #e2e8f0; cursor: pointer; transition: all 0.2s; font-size: 12px; }
+    .filter-chip:hover { border-color: rgba(168, 85, 247, 0.5); background: rgba(168, 85, 247, 0.1); }
+    .filter-chip.active { background: rgba(168, 85, 247, 0.3); border-color: #a855f7; }
+    
+    .android-badge { padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; display: inline-block; }
+    .android-14 { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .android-13 { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+    .android-12 { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+    .android-11 { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+    .android-9 { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+    .android-10 { background: rgba(236, 72, 153, 0.2); color: #ec4899; }
+    
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(71, 85, 105, 0.3); }
+    ::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.5); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(168, 85, 247, 0.8); }
+    
+    .sort-header { cursor: pointer; user-select: none; transition: color 0.2s; }
+    .sort-header:hover { color: #a855f7; }
+    .sort-header.active { color: #a855f7; }
+    
+    .device-detail { animation: slideIn 0.3s ease-out; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    @keyframes fadeOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100px); } }
+    
+    .timeline-item { position: relative; padding-left: 24px; margin-bottom: 16px; }
+    .timeline-item::before { content: ''; position: absolute; left: 6px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: #a855f7; }
+    .timeline-item::after { content: ''; position: absolute; left: 11px; top: 18px; width: 2px; height: calc(100% + 8px); background: rgba(168, 85, 247, 0.3); }
+    .timeline-item:last-child::after { display: none; }
+  </style>
+  <style>body { box-sizing: border-box; }</style>
+ </head>
+ <body class="h-full overflow-hidden">
+  <div id="app" class="w-full h-full flex flex-col"><!-- Navbar -->
+   <nav class="bg-gradient-to-r from-blue-950 to-slate-950 border-b border-blue-900/40 px-6 py-4">
+    <div class="flex items-center justify-between">
+     <div class="flex items-center gap-3"><button id="backBtn" class="p-1 hover:bg-slate-700/40 rounded text-slate-400 hover:text-slate-200 transition hidden"> <i data-lucide="arrow-left" class="w-5 h-5"></i> </button> <i data-lucide="download-cloud" class="w-7 h-7 text-blue-400"></i> <span id="platformTitle" class="text-xl font-bold text-blue-100">Firmware Download Center</span> <span id="deviceTitle" class="text-sm text-slate-400 ml-4 hidden"></span>
+     </div>
+     <div class="text-xs text-slate-400">
+      Last updated: <span id="lastCheck">just now</span>
+     </div>
+    </div>
+   </nav><!-- List View (Main) -->
+   <div id="listView" class="flex-1 flex flex-col min-h-0"><!-- Filter Bar -->
+    <div class="bg-slate-900/50 border-b border-blue-900/30 px-6 py-4 space-y-3"><!-- Search -->
+     <div class="flex items-center gap-3">
+      <div class="flex-1 relative"><i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400"></i> <input id="searchInput" type="text" placeholder="Search by model..." class="w-full bg-slate-800/60 border border-blue-900/40 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:bg-slate-800 transition">
+      </div><button id="clearBtn" class="px-3 py-2 bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 rounded-lg text-xs text-slate-300 transition">Clear</button>
+     </div><!-- Filters -->
+     <div class="flex flex-wrap gap-2" id="brandSection">
+      <div class="text-xs text-slate-400 py-1">
+       Brand:
+      </div>
+      <div id="brandFilters" class="flex flex-wrap gap-2"></div>
+     </div>
+     <div class="flex flex-wrap gap-2" id="androidSection">
+      <div class="text-xs text-slate-400 py-1">
+       Android:
+      </div>
+      <div id="androidFilters" class="flex flex-wrap gap-2"></div>
+     </div><!-- Stats -->
+     <div class="grid grid-cols-4 gap-3 pt-2">
+      <div class="bg-blue-900/20 border border-blue-900/40 rounded px-3 py-2">
+       <div class="text-xs text-slate-400">
+        Total Firmware
+       </div>
+       <div id="totalFirmware" class="text-lg font-bold text-blue-300">
+        0
+       </div>
+      </div>
+      <div class="bg-green-900/20 border border-green-900/40 rounded px-3 py-2">
+       <div class="text-xs text-slate-400">
+        Available
+       </div>
+       <div id="availableCount" class="text-lg font-bold text-green-400">
+        0
+       </div>
+      </div>
+      <div class="bg-slate-700/20 border border-slate-700/40 rounded px-3 py-2">
+       <div class="text-xs text-slate-400">
+        Search Results
+       </div>
+       <div id="resultsCount" class="text-lg font-bold text-slate-300">
+        0
+       </div>
+      </div>
+      <div class="bg-purple-900/20 border border-purple-900/40 rounded px-3 py-2">
+       <div class="text-xs text-slate-400">
+        Total Downloads
+       </div>
+       <div id="downloadCount" class="text-lg font-bold text-purple-300">
+        0
+       </div>
+      </div>
+     </div><!-- Backend Stats -->
+     <div class="grid grid-cols-3 gap-3 pt-3">
+      <div class="bg-orange-900/20 border border-orange-900/40 rounded px-3 py-2">
+       <div class="text-xs text-slate-400 flex items-center gap-1"><i data-lucide="activity" class="w-3 h-3"></i> Today's Downloads
+       </div>
+       <div id="statsToday" class="text-lg font-bold text-orange-300">
+        —
+       </div>
+      </div>
+      <div class="bg-rose-900/20 border border-rose-900/40 rounded px-3 py-2">
+       <div class="text-xs text-slate-400 flex items-center gap-1"><i data-lucide="trending-up" class="w-3 h-3"></i> All-Time Downloads
+       </div>
+       <div id="statsTotal" class="text-lg font-bold text-rose-300">
+        —
+       </div>
+      </div>
+      <div class="bg-cyan-900/20 border border-cyan-900/40 rounded px-3 py-2">
+       <div class="text-xs text-slate-400 flex items-center gap-1"><i data-lucide="refresh-cw" class="w-3 h-3"></i> Last Updated
+       </div>
+       <div id="statsLastUpdate" class="text-lg font-bold text-cyan-300">
+        just now
+       </div>
+      </div>
+     </div>
+    </div><!-- Table -->
+    <div class="flex-1 flex flex-col min-h-0">
+     <div class="overflow-x-auto">
+      <table class="w-full text-sm border-collapse">
+       <thead class="sticky top-0 bg-slate-950/80 border-y border-blue-900/40">
+        <tr>
+         <th class="px-4 py-3 text-left text-xs font-semibold text-slate-300 cursor-pointer sort-header" data-sort="model">
+          <div class="flex items-center gap-2">
+           Device Model <i data-lucide="arrow-down" class="w-3 h-3"></i>
+          </div></th>
+         <th class="px-4 py-3 text-left text-xs font-semibold text-slate-300">CSC</th>
+         <th class="px-4 py-3 text-left text-xs font-semibold text-slate-300 cursor-pointer sort-header" data-sort="version">
+          <div class="flex items-center gap-2">
+           Version <i data-lucide="arrow-down" class="w-3 h-3"></i>
+          </div></th>
+         <th class="px-4 py-3 text-left text-xs font-semibold text-slate-300">Binary</th>
+         <th class="px-4 py-3 text-left text-xs font-semibold text-slate-300 cursor-pointer sort-header" data-sort="security_patch">
+          <div class="flex items-center gap-2">
+           Security Patch <i data-lucide="arrow-down" class="w-3 h-3"></i>
+          </div></th>
+         <th class="px-4 py-3 text-left text-xs font-semibold text-slate-300">Android</th>
+         <th class="px-4 py-3 text-left text-xs font-semibold text-slate-300">Build Date</th>
+         <th class="px-4 py-3 text-center text-xs font-semibold text-slate-300">Status</th>
+         <th class="px-4 py-3 text-center text-xs font-semibold text-slate-300">Action</th>
+        </tr>
+       </thead>
+       <tbody id="firmwareTable" class="divide-y divide-slate-800/50"></tbody>
+      </table>
+     </div>
+     <div id="emptyState" class="flex-1 flex flex-col items-center justify-center text-slate-400 py-12"><i data-lucide="inbox" class="w-12 h-12 mb-3 opacity-50"></i>
+      <p class="text-sm">No firmware found. Try adjusting your filters.</p>
+     </div>
+    </div>
+   </div><!-- Device Detail View -->
+   <div id="detailView" class="hidden flex-1 flex flex-col min-h-0 overflow-y-auto device-detail">
+    <div class="px-6 py-4 border-b border-blue-900/30">
+     <h2 id="detailDeviceName" class="text-2xl font-bold text-blue-100 mb-1"></h2>
+     <p id="detailDeviceModel" class="text-sm text-slate-400"></p>
+    </div>
+    <div class="px-6 py-6 space-y-6 flex-1"><!-- Latest Firmware Section -->
+     <div class="bg-slate-900/50 border border-green-900/40 rounded-lg p-4">
+      <div class="flex items-center gap-2 mb-3"><i data-lucide="star" class="w-5 h-5 text-yellow-400"></i>
+       <h3 class="text-lg font-semibold text-green-300">Latest Firmware</h3>
+      </div>
+      <div id="latestFirmwareDetail" class="space-y-3"></div>
+     </div><!-- Firmware History Timeline -->
+     <div>
+      <h3 class="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2"><i data-lucide="history" class="w-5 h-5"></i> Firmware History</h3>
+      <div id="firmwareTimeline" class="space-y-2"></div>
+     </div>
+    </div>
+   </div>
+  </div>
+  <script>
+const firmwareData = [
+  // Galaxy S24 Series
+  { id: "1", model: "SM-S921B", csc: "XEF", country: "France", version: "S921BXXU1DWI5", binary: "U9", android: "14", security_patch: "2024-01-05", build_date: "2024-01-03", status: "available", downloads: 1250 },
+  { id: "2", model: "SM-S921B", csc: "DBT", country: "Germany", version: "S921BXXU1DWI4", binary: "U9", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 980 },
+  { id: "3", model: "SM-S921B", csc: "EUX", country: "EU", version: "S921BXXU1DWI3", binary: "U9", android: "14", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 1100 },
+  { id: "4", model: "SM-S911B", csc: "XEF", country: "France", version: "S911BXXU3DWI5", binary: "U7", android: "14", security_patch: "2024-01-05", build_date: "2024-01-03", status: "available", downloads: 678 },
+  { id: "5", model: "SM-S911B", csc: "DBT", country: "Germany", version: "S911BXXU3DWI4", binary: "U7", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 543 },
+  
+  // Galaxy S23 Series
+  { id: "6", model: "SM-S901B", csc: "XEF", country: "France", version: "S901BXXU5DWI2", binary: "U6", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 890 },
+  { id: "7", model: "SM-S901B", csc: "EUX", country: "EU", version: "S901BXXU5DWI1", binary: "U6", android: "14", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 765 },
+  { id: "8", model: "SM-S906B", csc: "XEF", country: "France", version: "S906BXXU2DWI2", binary: "U6", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 645 },
+  
+  // Galaxy A Series
+  { id: "9", model: "SM-A545F", csc: "XEF", country: "France", version: "A545FXXU3DWI1", binary: "U5", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 1520 },
+  { id: "10", model: "SM-A545F", csc: "INS", country: "India", version: "A545FXXU3DUI1", binary: "U5", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 2100 },
+  { id: "11", model: "SM-A535F", csc: "XEF", country: "France", version: "A535FXXU5DWI1", binary: "U5", android: "13", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 1340 },
+  { id: "12", model: "SM-A535F", csc: "INS", country: "India", version: "A535FXXU5DUI1", binary: "U5", android: "13", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 1890 },
+  { id: "13", model: "SM-A525F", csc: "XEF", country: "France", version: "A525FXXU4DWI1", binary: "U4", android: "12", security_patch: "2024-01-05", build_date: "2023-12-30", status: "available", downloads: 980 },
+  { id: "14", model: "SM-A525F", csc: "INS", country: "India", version: "A525FXXU4DUI1", binary: "U4", android: "12", security_patch: "2024-01-05", build_date: "2023-12-30", status: "available", downloads: 1450 },
+  { id: "15", model: "SM-A515F", csc: "INS", country: "India", version: "A515FXXU8DWI1", binary: "U5", android: "13", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 512 },
+  { id: "16", model: "SM-A515F", csc: "EGY", country: "Egypt", version: "A515FXXU8DWH9", binary: "U5", android: "13", security_patch: "2023-12-05", build_date: "2023-11-28", status: "available", downloads: 234 },
+  { id: "17", model: "SM-A325F", csc: "XEF", country: "France", version: "A325FXXU5DWI1", binary: "U4", android: "12", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 345 },
+  { id: "18", model: "SM-A325F", csc: "INS", country: "India", version: "A325FXXU5DUI1", binary: "U4", android: "12", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 567 },
+  
+  // Galaxy M Series
+  { id: "19", model: "SM-M345F", csc: "INS", country: "India", version: "M345FXXU2DUI1", binary: "U3", android: "13", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 890 },
+  { id: "20", model: "SM-M335F", csc: "INS", country: "India", version: "M335FXXU3DUI1", binary: "U3", android: "12", security_patch: "2024-01-05", build_date: "2023-12-30", status: "available", downloads: 650 },
+  { id: "21", model: "SM-M325F", csc: "INS", country: "India", version: "M325FXXU2DUI1", binary: "U2", android: "11", security_patch: "2023-12-05", build_date: "2023-11-28", status: "available", downloads: 420 },
+  { id: "22", model: "SM-M115F", csc: "INS", country: "India", version: "M115FXXU2DUI2", binary: "U2", android: "11", security_patch: "2023-11-05", build_date: "2023-10-28", status: "available", downloads: 123 },
+  
+  // Galaxy Z Series (Foldables)
+  { id: "23", model: "SM-F941B", csc: "XEF", country: "France", version: "F941BXXU1DWI1", binary: "U8", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 456 },
+  { id: "24", model: "SM-F941B", csc: "EUX", country: "EU", version: "F941BXXU1DWI1", binary: "U8", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 389 },
+  { id: "25", model: "SM-F931B", csc: "XEF", country: "France", version: "F931BXXU3DWI1", binary: "U7", android: "13", security_patch: "2023-12-05", build_date: "2023-11-30", status: "available", downloads: 234 },
+  
+  // Galaxy Note Series
+  { id: "26", model: "SM-N976B", csc: "XEF", country: "France", version: "N976BXXU9DUI1", binary: "U8", android: "13", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 567 },
+  { id: "27", model: "SM-N976B", csc: "EUX", country: "EU", version: "N976BXXU9DUI1", binary: "U8", android: "13", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 478 },
+  { id: "28", model: "SM-N975F", csc: "INS", country: "India", version: "N975FXXU2DUI1", binary: "U7", android: "12", security_patch: "2023-12-05", build_date: "2023-11-28", status: "available", downloads: 345 },
+  
+  // Galaxy Tab Series
+  { id: "29", model: "SM-T976B", csc: "XEF", country: "France", version: "T976BXXU1DWI1", binary: "U6", android: "14", security_patch: "2024-01-05", build_date: "2024-01-02", status: "available", downloads: 234 },
+  { id: "30", model: "SM-T870", csc: "XEF", country: "France", version: "T870XXU2DWI1", binary: "U5", android: "13", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 189 },
+  { id: "31", model: "SM-T530", csc: "EUX", country: "EU", version: "T530XXU2DUI1", binary: "U3", android: "11", security_patch: "2023-11-05", build_date: "2023-10-28", status: "available", downloads: 67 },
+  
+  // Galaxy J Series
+  { id: "32", model: "SM-J810F", csc: "XEF", country: "France", version: "J810FXXU2DUI1", binary: "U2", android: "9", security_patch: "2023-10-05", build_date: "2023-09-15", status: "available", downloads: 45 },
+  
+  // Galaxy C Series
+  { id: "33", model: "SM-C015F", csc: "INS", country: "India", version: "C015FXXU1DUI1", binary: "U2", android: "12", security_patch: "2023-12-05", build_date: "2023-11-20", status: "available", downloads: 89 },
+  
+  // Galaxy F Series
+  { id: "34", model: "SM-E225F", csc: "INS", country: "India", version: "E225FXXU2DUI1", binary: "U3", android: "12", security_patch: "2024-01-05", build_date: "2024-01-01", status: "available", downloads: 234 },
+  { id: "35", model: "SM-E225F", csc: "INS", country: "India", version: "E225FXXU1DUI1", binary: "U3", android: "11", security_patch: "2023-12-05", build_date: "2023-11-28", status: "pending", downloads: 156 },
+];
+
+const brands = ["Samsung"];
+const androidVersions = ["14", "13", "12", "11"];
+let filteredData = [...firmwareData];
+let sortBy = "model";
+let sortOrder = "asc";
+let searchTerm = "";
+let selectedBrand = null;
+let selectedAndroid = null;
+
+function getStatusIcon(status) {
+  const icons = { available: "check-circle", downloading: "loader", error: "alert-circle", pending: "clock" };
+  return icons[status] || "help-circle";
+}
+
+function renderBrandFilters() {
+  const cont = document.getElementById('brandFilters');
+  cont.innerHTML = brands.map(b => `
+    <button class="filter-chip ${selectedBrand===b ? 'active' : ''}" data-brand="${b}">${b}</button>
+  `).join('');
+  cont.querySelectorAll('button').forEach(btn => btn.onclick = () => {
+    selectedBrand = selectedBrand === btn.dataset.brand ? null : btn.dataset.brand;
+    renderBrandFilters();
+    filterAndRender();
+  });
+}
+
+function renderAndroidFilters() {
+  const cont = document.getElementById('androidFilters');
+  cont.innerHTML = androidVersions.map(v => `
+    <button class="filter-chip ${selectedAndroid===v ? 'active' : ''}" data-android="${v}">Android ${v}</button>
+  `).join('');
+  cont.querySelectorAll('button').forEach(btn => btn.onclick = () => {
+    selectedAndroid = selectedAndroid === btn.dataset.android ? null : btn.dataset.android;
+    renderAndroidFilters();
+    filterAndRender();
+  });
+}
+
+function filterAndRender() {
+  filteredData = firmwareData.filter(fw => {
+    if (searchTerm && !fw.model.toLowerCase().includes(searchTerm.toLowerCase()) && !fw.csc.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    if (selectedBrand && fw.model.split('-')[0] !== selectedBrand) return false;
+    if (selectedAndroid && fw.android !== selectedAndroid) return false;
+    return true;
+  });
+
+  sortData();
+  renderTable();
+  updateStats();
+}
+
+function sortData() {
+  filteredData.sort((a, b) => {
+    const aVal = a[sortBy];
+    const bVal = b[sortBy];
+    if (sortBy === "version" || sortBy === "security_patch") {
+      return sortOrder === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    }
+    return sortOrder === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+  });
+}
+
+function renderTable() {
+  const tbody = document.getElementById('firmwareTable');
+  const empty = document.getElementById('emptyState');
+  
+  if (filteredData.length === 0) {
+    tbody.innerHTML = "";
+    empty.style.display = "flex";
+    return;
+  }
+  
+  empty.style.display = "none";
+  tbody.innerHTML = filteredData.map(fw => `
+    <tr class="firmware-row" onclick="showDeviceDetail('${fw.model}')">
+      <td class="px-4 py-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="smartphone" class="w-4 h-4 text-blue-400"></i>
+          <span class="font-semibold text-slate-100">${fw.model}</span>
+        </div>
+      </td>
+      <td class="px-4 py-3 text-slate-300">${fw.csc}</td>
+      <td class="px-4 py-3"><span class="font-mono text-purple-300 font-semibold">${fw.version}</span></td>
+      <td class="px-4 py-3 text-slate-400">Binary U${fw.binary}</td>
+      <td class="px-4 py-3">
+        <span class="inline-block px-2 py-1 rounded text-xs bg-orange-900/30 text-orange-300">${fw.security_patch}</span>
+      </td>
+      <td class="px-4 py-3">
+        <span class="android-badge android-${fw.android}">Android ${fw.android}</span>
+      </td>
+      <td class="px-4 py-3 text-slate-400 text-xs">${fw.build_date}</td>
+      <td class="px-4 py-3 text-center">
+        <span class="status-badge status-${fw.status}">
+          <i data-lucide="${getStatusIcon(fw.status)}" class="w-3 h-3"></i>
+          ${fw.status}
+        </span>
+      </td>
+      <td class="px-4 py-3 text-center" onclick="event.stopPropagation();">
+        <button onclick="recordDownload('${fw.id}', '${fw.model}')" class="p-2 hover:bg-slate-700/50 rounded transition text-blue-400 hover:text-blue-300">
+          <i data-lucide="download" class="w-4 h-4"></i>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+  
+  lucide.createIcons();
+}
+
+function updateStats() {
+  const available = filteredData.filter(f => f.status === "available").length;
+  const totalDownloads = firmwareData.reduce((sum, f) => sum + f.downloads, 0);
+  
+  document.getElementById('totalFirmware').textContent = firmwareData.length;
+  document.getElementById('availableCount').textContent = available;
+  document.getElementById('resultsCount').textContent = filteredData.length;
+  document.getElementById('downloadCount').textContent = totalDownloads;
+}
+
+let allDownloads = [];
+
+const dataHandler = {
+  onDataChanged(data) {
+    allDownloads = data;
+    updateStats();
+  }
+};
+
+// Download tracking and toast notifications
+let toastContainer = null;
+
+function createToastContainer() {
+  if (!toastContainer) {
+    toastContainer = document.createElement('div');
+    toastContainer.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px;';
+    document.body.appendChild(toastContainer);
+  }
+  return toastContainer;
+}
+
+function showToast(message, type = 'info') {
+  const container = createToastContainer();
+  const toast = document.createElement('div');
+  const bgColor = type === 'success' ? 'bg-green-600/90' : type === 'error' ? 'bg-red-600/90' : 'bg-blue-600/90';
+  const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
+  
+  toast.className = `${bgColor} text-white px-4 py-3 rounded-lg flex items-center gap-2 animate-in fade-in slide-in-from-right text-sm`;
+  toast.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4"></i><span>${message}</span>`;
+  
+  container.appendChild(toast);
+  lucide.createIcons();
+  
+  setTimeout(() => {
+    toast.style.animation = 'fadeOut 0.3s ease-out forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+async function recordDownload(id, model) {
+  const fw = firmwareData.find(f => f.id === id);
+  if (!fw) return;
+  
+  try {
+    // Show loading state
+    showToast(`Preparing ${fw.model} download...`, 'info');
+    
+    // Request signed download URL from backend
+    // Backend validates auth, checks concurrent limits, creates Download record, returns signed CDN URL
+    const downloadResponse = await fetch(`/api/secure-download/${id}`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+    
+    if (!downloadResponse.ok) {
+      if (downloadResponse.status === 429) {
+        showToast('Too many concurrent downloads. Please wait for others to finish.', 'error');
+      } else if (downloadResponse.status === 403) {
+        showToast('Download not authorized', 'error');
+      } else {
+        showToast('Failed to start download', 'error');
+      }
+      return;
+    }
+    
+    // Parse the signed URL from backend response
+    const data = await downloadResponse.json();
+    const signedUrl = data.signedUrl;
+    
+    if (!signedUrl) {
+      showToast('Invalid download URL received', 'error');
+      return;
+    }
+    
+    // Open signed URL in new window - browser handles file download automatically
+    window.open(signedUrl, '_blank', 'noopener,noreferrer');
+    showToast(`Downloading ${fw.model} - ${fw.version}`, 'success');
+    
+    // Update download tracking in data sheet (async, non-blocking)
+    // Backend already created Download record in database during /api/secure-download
+    const existing = allDownloads.find(d => d.id === id);
+    if (existing) {
+      existing.download_count = (existing.download_count || 0) + 1;
+      existing.last_downloaded = new Date().toISOString();
+      const result = await window.dataSdk.update(existing);
+      if (!result.isOk) {
+        console.error('Failed to update download stats');
+      }
+    } else {
+      if (allDownloads.length >= 999) {
+        console.error('Download tracking limit reached');
+        return;
+      }
+      
+      const result = await window.dataSdk.create({
+        id,
+        model,
+        device_name: fw.model,
+        csc: fw.csc,
+        country: fw.country,
+        version: fw.version,
+        binary: fw.binary,
+        android: fw.android,
+        security_patch: fw.security_patch,
+        build_date: fw.build_date,
+        status: "available",
+        download_count: 1,
+        last_downloaded: new Date().toISOString()
+      });
+      if (!result.isOk) {
+        console.error('Failed to track download');
+      }
+    }
+    
+    // Refresh stats after successful download
+    await refreshBackendStats();
+  } catch (err) {
+    showToast('Download failed: ' + (err.message || 'Unknown error'), 'error');
+  }
+}
+
+async function refreshBackendStats() {
+  try {
+    const response = await fetch('/api/stats', {
+      method: 'GET',
+      credentials: 'include'
+    });
+    
+    if (response.ok) {
+      const { total, today } = await response.json();
+      document.getElementById('statsTotal').textContent = total.toLocaleString();
+      document.getElementById('statsToday').textContent = today.toLocaleString();
+      
+      // Update last refresh time
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('statsLastUpdate').textContent = timeStr;
+    }
+  } catch (err) {
+    console.error('Failed to fetch backend stats:', err);
+  }
+}
+
+document.getElementById('searchInput').oninput = (e) => {
+  searchTerm = e.target.value;
+  filterAndRender();
+};
+
+document.getElementById('clearBtn').onclick = () => {
+  document.getElementById('searchInput').value = "";
+  searchTerm = "";
+  selectedBrand = null;
+  selectedAndroid = null;
+  renderBrandFilters();
+  renderAndroidFilters();
+  filterAndRender();
+};
+
+function showDeviceDetail(model) {
+  const deviceFirmwares = firmwareData.filter(f => f.model === model).sort((a, b) => b.build_date.localeCompare(a.build_date));
+  
+  if (deviceFirmwares.length === 0) return;
+  
+  // Show detail view
+  document.getElementById('listView').classList.add('hidden');
+  document.getElementById('detailView').classList.remove('hidden');
+  document.getElementById('backBtn').classList.remove('hidden');
+  
+  // Set header
+  document.getElementById('detailDeviceName').textContent = model;
+  document.getElementById('detailDeviceModel').textContent = `${deviceFirmwares.length} versions available`;
+  
+  // Latest firmware
+  const latest = deviceFirmwares[0];
+  document.getElementById('latestFirmwareDetail').innerHTML = `
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <p class="text-xs text-slate-400 mb-1">Version</p>
+        <p class="text-purple-300 font-mono font-semibold">${latest.version}</p>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400 mb-1">Android</p>
+        <span class="android-badge android-${latest.android}">Android ${latest.android}</span>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400 mb-1">Security Patch</p>
+        <p class="text-orange-300">${latest.security_patch}</p>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400 mb-1">Build Date</p>
+        <p class="text-slate-300">${latest.build_date}</p>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400 mb-1">CSC</p>
+        <p class="text-blue-300">${latest.csc}</p>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400 mb-1">Binary</p>
+        <p class="text-slate-300">U${latest.binary}</p>
+      </div>
+    </div>
+    <button onclick="recordDownload('${latest.id}', '${latest.model}')" class="mt-4 w-full px-4 py-2 bg-green-600/80 hover:bg-green-600 rounded text-white font-semibold transition flex items-center justify-center gap-2">
+      <i data-lucide="download" class="w-4 h-4"></i>
+      Download Latest
+    </button>
+  `;
+  
+  // Timeline
+  document.getElementById('firmwareTimeline').innerHTML = deviceFirmwares.map((fw, idx) => `
+    <div class="timeline-item">
+      <div class="bg-slate-800/50 border border-slate-700/50 rounded p-3">
+        <div class="flex items-start justify-between mb-2">
+          <div>
+            <p class="font-mono text-purple-300 font-semibold text-sm">${fw.version}</p>
+            <p class="text-xs text-slate-400 mt-1">${fw.build_date} • Android ${fw.android}</p>
+          </div>
+          <span class="text-xs px-2 py-1 bg-slate-700 text-slate-300 rounded">${fw.csc}</span>
+        </div>
+        <div class="flex items-center gap-2 mt-2 text-xs">
+          <span class="text-orange-300">🔒 ${fw.security_patch}</span>
+          <span class="text-slate-400">Binary U${fw.binary}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  
+  lucide.createIcons();
+}
+
+document.getElementById('backBtn').onclick = () => {
+  document.getElementById('detailView').classList.add('hidden');
+  document.getElementById('listView').classList.remove('hidden');
+  document.getElementById('backBtn').classList.add('hidden');
+};
+
+document.querySelectorAll('.sort-header').forEach(header => {
+  header.onclick = () => {
+    if (sortBy === header.dataset.sort) {
+      sortOrder = sortOrder === "asc" ? "desc" : "asc";
+    } else {
+      sortBy = header.dataset.sort;
+      sortOrder = "asc";
+    }
+    document.querySelectorAll('.sort-header').forEach(h => h.classList.remove('active'));
+    header.classList.add('active');
+    filterAndRender();
+  };
+});
+
+const defaultConfig = { platform_title: "Firmware Download Center", search_placeholder: "Search by model..." };
+
+window.elementSdk.init({
+  defaultConfig,
+  onConfigChange: async (config) => {
+    document.getElementById('platformTitle').textContent = config.platform_title || defaultConfig.platform_title;
+  },
+  mapToCapabilities: (config) => ({ recolorables: [], borderables: [], fontEditable: undefined, fontSizeable: undefined }),
+  mapToEditPanelValues: (config) => new Map([["platform_title", config.platform_title || defaultConfig.platform_title], ["search_placeholder", config.search_placeholder || defaultConfig.search_placeholder]])
+});
+
+(async () => {
+  const initResult = await window.dataSdk.init(dataHandler);
+  if (!initResult.isOk) console.error("Data SDK init failed");
+})();
+
+renderBrandFilters();
+renderAndroidFilters();
+filterAndRender();
+lucide.createIcons();
+
+// Load backend stats on page load
+refreshBackendStats();
+
+// Refresh stats every 30 seconds
+setInterval(refreshBackendStats, 30000);
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9f1332ed25dacac8',t:'MTc3NzAxMzY5MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
